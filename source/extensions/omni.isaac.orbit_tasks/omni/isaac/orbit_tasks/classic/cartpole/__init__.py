@@ -10,8 +10,12 @@ Cartpole balancing environment.
 import gymnasium as gym
 
 from . import agents
-from .cartpole_env_cfg import CartpoleEnvCfg
+# from .cartpole_env_cfg import CartpoleEnvCfg
+# from .cartpole_env_2 import OIGEEnv
+from .cartpole_env_2 import CartpoleEnvCfg # as OIGEBaseCfg
 
+from .cartpole_env_2 import CartpoleEnv
+from .cartpole_env import CartpoleEnvAndrewCfg, CartpoleEnvAndrew
 ##
 # Register Gym environments.
 ##
@@ -26,5 +30,25 @@ gym.register(
         "rsl_rl_cfg_entry_point": agents.rsl_rl_ppo_cfg.CartpolePPORunnerCfg,
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
         "sb3_cfg_entry_point": f"{agents.__name__}:sb3_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Cartpole-OIGE-v0",
+    entry_point="omni.isaac.orbit_tasks.classic.cartpole:CartpoleEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": CartpoleEnvCfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Cartpole-v0-andrew",
+    entry_point="omni.isaac.orbit_tasks.classic.cartpole:CartpoleEnvAndrew",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": CartpoleEnvAndrewCfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
     },
 )

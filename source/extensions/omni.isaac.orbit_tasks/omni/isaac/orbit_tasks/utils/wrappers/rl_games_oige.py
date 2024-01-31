@@ -43,12 +43,14 @@ from rl_games.common.vecenv import IVecEnv
 
 from omni.isaac.orbit.envs import RLTaskEnv, VecEnvObs
 
+from omni.isaac.orbit_tasks.classic.cartpole.cartpole_env import CartpoleEnvAndrew
+
 """
 Vectorized environment wrapper.
 """
 
 
-class RlGamesVecEnvWrapper(IVecEnv):
+class RlGamesOIGEWrapper(IVecEnv):
     """Wraps around Orbit environment for RL-Games.
 
     This class wraps around the Orbit environment. Since RL-Games works directly on
@@ -79,7 +81,7 @@ class RlGamesVecEnvWrapper(IVecEnv):
         https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
     """
 
-    def __init__(self, env: RLTaskEnv, rl_device: str, clip_obs: float, clip_actions: float):
+    def __init__(self, env: CartpoleEnvAndrew, rl_device: str, clip_obs: float, clip_actions: float):
         """Initializes the wrapper instance.
 
         Args:
@@ -93,28 +95,28 @@ class RlGamesVecEnvWrapper(IVecEnv):
             ValueError: If specified, the privileged observations (critic) are not of type :obj:`gym.spaces.Box`.
         """
         # check that input is valid
-        # if not isinstance(env.unwrapped, RLTaskEnv):
-        #     raise ValueError(f"The environment must be inherited from RLTaskEnv. Environment type: {type(env)}")
+        if not isinstance(env, CartpoleEnvAndrew):
+            raise ValueError(f"The environment must be inherited from CartpoleEnvAndrew. Environment type: {type(env)}")
         # initialize the wrapper
         self.env = env
         # store provided arguments
         self._rl_device = rl_device
         self._clip_obs = clip_obs
         self._clip_actions = clip_actions
-        self._sim_device = env.unwrapped.device
+        self._sim_device = env.sim.device
         # information for privileged observations
-        if self.state_space is None:
-            self.rlg_num_states = 0
-        else:
-            self.rlg_num_states = self.state_space.shape[0]
+        # if self.state_space is None:
+        self.rlg_num_states = 0
+        # else:
+            # self.rlg_num_states = self.state_space.shape[0]
 
-        print(f"Initialization Values:\n {os.path.basename(__file__)}" 
-            f"Environment Type: {type(env)}\n"
-            f"RL Device: {self._rl_device}\n"
-            f"Clip Observations: {self._clip_obs}\n"
-            f"Clip Actions: {self._clip_actions}\n"
-            f"Simulation Device: {self._sim_device}\n"
-            f"Number of States: {self.rlg_num_states}\n")
+        print(f"Initialization Values: file: {os.path.basename(__file__)}\n"
+          f"Environment Type: {type(env)}\n"
+          f"RL Device: {self._rl_device}\n"
+          f"Clip Observations: {self._clip_obs}\n"
+          f"Clip Actions: {self._clip_actions}\n"
+          f"Simulation Device: {self._sim_device}\n"
+          f"Number of States: {self.rlg_num_states}\n")
 
     def __str__(self):
         """Returns the wrapper name and the :attr:`env` representation string."""
@@ -137,16 +139,12 @@ class RlGamesVecEnvWrapper(IVecEnv):
     @property
     def render_mode(self) -> str | None:
         """Returns the :attr:`Env` :attr:`render_mode`."""
-        print(f"render_mode values - file: {os.path.basename(__file__)}\n" 
-            f"self.env.render_mode: {self.env.render_mode}\n"
-        )
-    
-        return self.env.render_mode
+        # TODO - determine what this is, returning None for now because this is the default for RLTaskEnv()
+        return None 
 
     @property
     def observation_space(self) -> gym.spaces.Box:
         """Returns the :attr:`Env` :attr:`observation_space`."""
-        # note: rl-games only wants single observation space
         policy_obs_space = self.unwrapped.single_observation_space["policy"]
         if not isinstance(policy_obs_space, gymnasium.spaces.Box):
             raise NotImplementedError(
@@ -154,18 +152,13 @@ class RlGamesVecEnvWrapper(IVecEnv):
                 f" If you need to support this, please modify the wrapper: {self.__class__.__name__},"
                 " and if you are nice, please send a merge-request."
             )
-        # note: maybe should check if we are a sub-set of the actual space. don't do it right now since
-        #   in RLTaskEnv we are setting action space as (-inf, inf).
-        print(f"observation_space values - file: {os.path.basename(__file__)}\n" 
-            f"policy_obs_space: {policy_obs_space}\n"
-            f"policy_obs_space.shape: {policy_obs_space.shape}\n"
-        )
+
         return gym.spaces.Box(-self._clip_obs, self._clip_obs, policy_obs_space.shape)
 
     @property
     def action_space(self) -> gym.Space:
         """Returns the :attr:`Env` :attr:`action_space`."""
-        # note: rl-games only wants single action space
+
         action_space = self.unwrapped.single_action_space
         if not isinstance(action_space, gymnasium.spaces.Box):
             raise NotImplementedError(
@@ -182,37 +175,9 @@ class RlGamesVecEnvWrapper(IVecEnv):
         #   in RLTaskEnv we are setting action space as (-inf, inf).
         return gym.spaces.Box(-self._clip_actions, self._clip_actions, action_space.shape)
 
-    @classmethod
-    def class_name(cls) -> str:
-        """Returns the class name of the wrapper."""
-        return cls.__name__
-
-    @property
-    def unwrapped(self) -> RLTaskEnv:
-        """Returns the base environment of the wrapper.
-
-        This will be the bare :class:`gymnasium.Env` environment, underneath all layers of wrappers.
-        """
-        return self.env.unwrapped
-
-    """
-    Properties
-    """
-
-    @property
-    def num_envs(self) -> int:
-        """Returns the number of sub-environment instances."""
-        return self.unwrapped.num_envs
-
-    @property
-    def device(self) -> str:
-        """Returns the base environment simulation device."""
-        return self.unwrapped.device
-
     @property
     def state_space(self) -> gym.spaces.Box | None:
         """Returns the :attr:`Env` :attr:`observation_space`."""
-        # note: rl-games only wants single observation space
         critic_obs_space = self.unwrapped.single_observation_space.get("critic")
         # check if we even have a critic obs
         if critic_obs_space is None:
@@ -226,13 +191,42 @@ class RlGamesVecEnvWrapper(IVecEnv):
         # return casted space in gym.spaces.Box (OpenAI Gym)
         # note: maybe should check if we are a sub-set of the actual space. don't do it right now since
         #   in RLTaskEnv we are setting action space as (-inf, inf).
-        print(f"state_space values - file: {os.path.basename(__file__)}\n" 
-            f"critic_obs_space: {critic_obs_space}\n"
-            f"critic_obs_space.shape: {critic_obs_space.shape}\n"
-            f"---\n"
+        # print(f"state_space values - file: {os.path.basename(__file__)}\n" 
+        #     f"critic_obs_space: {critic_obs_space}\n"
+        #     f"critic_obs_space.shape: {critic_obs_space.shape}\n"
+        #     f"---\n"
 
-        )
+        # )
         return gym.spaces.Box(-self._clip_obs, self._clip_obs, critic_obs_space.shape)
+
+
+    @classmethod
+    def class_name(cls) -> str:
+        """Returns the class name of the wrapper."""
+        return cls.__name__
+
+    @property
+    def unwrapped(self) -> CartpoleEnvAndrew:
+        """Returns the base environment of the wrapper.
+
+        This will be the bare :class:`gymnasium.Env` environment, underneath all layers of wrappers.
+        """
+        return self.env
+
+    """
+    Properties
+    """
+
+    @property
+    def num_envs(self) -> int:
+        """Returns the number of sub-environment instances."""
+        return self.unwrapped.num_envs
+
+    @property
+    def device(self) -> str:
+        """Returns the base environment simulation device."""
+        return self.unwrapped.sim.device
+
 
     def get_number_of_agents(self) -> int:
         """Returns number of actors in the environment."""
@@ -240,8 +234,6 @@ class RlGamesVecEnvWrapper(IVecEnv):
 
     def get_env_info(self) -> dict:
         """Returns the Gym spaces for the environment."""
-
-
         return {
             "observation_space": self.observation_space,
             "action_space": self.action_space,
@@ -253,24 +245,23 @@ class RlGamesVecEnvWrapper(IVecEnv):
     """
 
     def seed(self, seed: int = -1) -> int:  # noqa: D102
-        return self.unwrapped.seed(seed)
+        pass 
 
     def reset(self):  # noqa: D102
-        obs_dict, _ = self.env.reset()
+        # obs_dict, _ = self.env.reset()
         # process observations and states
-        result = self._process_obs(obs_dict)
+        # return self._process_obs(obs_dict)
+        obs = self.env.get_observations()["cartpole"]["obs_buf"]
+        # obs_dict = {"policy": obs, "critic": self.env.single_observation_space["critic"]}
+        # print(f"reset values - file: {os.path.basename(__file__)}:" 
+        #     f"obs: {obs}\n"
+        #     f"obs.shape: {obs.shape}\n"
+        #     # f"critic_obs_space.shape: {critic_obs_space.shape}\n"
+        # )
+        return obs 
 
-        print(f"reset values - file: {os.path.basename(__file__)}\n" 
-            f"obs_dict: {obs_dict}\n"
-            f"obs_dict['policy'].shape: {obs_dict['policy'].shape}\n"
-            f"result: {result}\n"
-            f"result.shape: {result.shape}\n"
-            f"---\n"
-            # f"critic_obs_space.shape: {critic_obs_space.shape}\n"
-        )
-        return result 
 
-    def step(self, actions):  # noqa: D102
+    def step(self, actions: torch.Tensor):  # noqa: D102
         # move actions to sim-device
         actions = actions.detach().clone().to(device=self._sim_device)
         # clip the actions
@@ -290,29 +281,26 @@ class RlGamesVecEnvWrapper(IVecEnv):
         extras = {
             k: v.to(device=self._rl_device, non_blocking=True) if hasattr(v, "to") else v for k, v in extras.items()
         }
-        print(f"step values - file: {os.path.basename(__file__)}\n" 
-            f"obs_and_states: {obs_and_states}\n"
-            f"obs_and_states.shape: {obs_and_states.shape}\n"
-            f"rew: {rew}\n"
-            f"rew.shape: {rew.shape}\n"
-            f"dones: {dones}\n"
-            f"dones.shape: {dones.shape}\n"
-            f"extras: {extras}\n"
-            f"---\n"
+        # print(f"step values - file: {os.path.basename(__file__)}\n" 
+        #     f"obs_and_states: {obs_and_states}\n"
+        #     f"obs_and_states.shape: {obs_and_states.shape}\n"
+        #     f"rew: {rew}\n"
+        #     f"rew.shape: {rew.shape}\n"
+        #     f"dones: {dones}\n"
+        #     f"dones.shape: {dones.shape}\n"
+        #     f"extras: {extras}\n"
+        #     f"---\n"
 
-        )
+        # )
         return obs_and_states, rew, dones, extras
 
     def close(self):  # noqa: D102
-        
-        close = self.env.close()
-        print(f"close values - file: {os.path.basename(__file__)}\n" 
-            f"close: {close}\n"
-            f"---\n"
+        close = None 
+        # print(f"close values - file: {os.path.basename(__file__)}:" 
+        #     f"close: {close}\n"
+        # )
 
-        )
-
-        return close 
+        return # I don't think there is a close function for the CartpoleEnvAndrew
 
     """
     Helper functions
@@ -333,12 +321,15 @@ class RlGamesVecEnvWrapper(IVecEnv):
             Otherwise just the observations tensor is returned.
         """
         # process policy obs
-        obs_0 = obs_dict["policy"]
+        obs_0 = obs_dict["cartpole"]["obs_buf"]
         # clip the observations
         obs = torch.clamp(obs_0, -self._clip_obs, self._clip_obs)
         # move the buffer to rl-device
         obs = obs.to(device=self._rl_device).clone()
-
+        # print(f"_process_obs values - file: {os.path.basename(__file__)}:" 
+        #     f"obs: {obs_0}\n"
+        #     f"obs: {obs}\n"
+        # )
         # check if asymmetric actor-critic or not
         if self.rlg_num_states > 0:
             # acquire states from the environment if it exists
@@ -351,19 +342,8 @@ class RlGamesVecEnvWrapper(IVecEnv):
             # move buffers to rl-device
             states = states.to(self._rl_device).clone()
             # convert to dictionary
-            results = {"obs": obs, "states": states}
-            print(f"_process_obs values (branch  self.rlg_num_states > 0) - file: {os.path.basename(__file__)} \n" 
-                f"results: {results}\n"
-            f"---\n"
-
-            )
-            return results 
+            return {"obs": obs, "states": states}
         else:
-            print(f"_process_obs values (branch ELSE) - file: {os.path.basename(__file__)}\n" 
-                f"obs: {obs}\n"
-            f"---\n"
-
-            )
             return obs
 
 
@@ -372,7 +352,7 @@ Environment Handler.
 """
 
 
-class RlGamesGpuEnv(IVecEnv):
+class RlGamesOIGEGpuEnv(IVecEnv):
     """Thin wrapper to create instance of the environment to fit RL-Games runner."""
 
     # TODO: Adding this for now but do we really need this?
@@ -384,7 +364,7 @@ class RlGamesGpuEnv(IVecEnv):
             config_name: The name of the environment configuration.
             num_actors: The number of actors in the environment. This is not used in this wrapper.
         """
-        self.env: RlGamesVecEnvWrapper = env_configurations.configurations[config_name]["env_creator"](**kwargs)
+        self.env: RlGamesOIGEWrapper = env_configurations.configurations[config_name]["env_creator"](**kwargs)
 
     def step(self, action):  # noqa: D102
         return self.env.step(action)
