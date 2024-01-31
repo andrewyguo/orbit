@@ -23,6 +23,7 @@ parser.add_argument("--video_interval", type=int, default=2000, help="Interval b
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+parser.add_argument("--use_oige_env", action="store_true", help="sets use_oige_env to True")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -59,7 +60,11 @@ import omni.isaac.contrib_tasks  # noqa: F401
 import omni.isaac.orbit_tasks  # noqa: F401
 from omni.isaac.orbit_tasks.utils import load_cfg_from_registry, parse_env_cfg
 from omni.isaac.orbit_tasks.utils.wrappers.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
+from omni.isaac.orbit_tasks.utils.wrappers.rl_games_oige import RlGamesOIGEWrapper, RlGamesOIGEGpuEnv
 
+from omni.isaac.orbit_tasks.classic.cartpole.cartpole_env import CartpoleEnvAndrewCfg, CartpoleEnvAndrew
+
+use_oige_env = args_cli.use_oige_env 
 
 def main():
     """Train with RL-Games agent."""
@@ -96,7 +101,13 @@ def main():
     clip_actions = agent_cfg["params"]["env"].get("clip_actions", math.inf)
 
     # create isaac environment
-    env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    # env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    if use_oige_env:
+        cartpole_cfg = CartpoleEnvAndrewCfg()
+        env = CartpoleEnvAndrew(cartpole_cfg)
+    else: 
+        env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
     # wrap for video recording
     if args_cli.video:
         video_kwargs = {
@@ -109,19 +120,32 @@ def main():
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
     # wrap around environment for rl-games
-    env = RlGamesVecEnvWrapper(env, rl_device, clip_obs, clip_actions)
+    if use_oige_env: 
+        env = RlGamesOIGEWrapper(env, rl_device, clip_obs, clip_actions)
+    else:
+        env = RlGamesVecEnvWrapper(env, rl_device, clip_obs, clip_actions)
 
     # register the environment to rl-games registry
     # note: in agents configuration: environment name must be "rlgpu"
-    vecenv.register(
+
+    if use_oige_env:
+        vecenv.register(
+            "IsaacRlgWrapper", lambda config_name, num_actors, **kwargs: RlGamesOIGEGpuEnv(config_name, num_actors, **kwargs)
+        )
+    else:
+        vecenv.register(
         "IsaacRlgWrapper", lambda config_name, num_actors, **kwargs: RlGamesGpuEnv(config_name, num_actors, **kwargs)
     )
     env_configurations.register("rlgpu", {"vecenv_type": "IsaacRlgWrapper", "env_creator": lambda **kwargs: env})
 
     # set number of actors into agent config
+    # Note: Checked agent_cfg, everything is the same between old and new wrapper 
     agent_cfg["params"]["config"]["num_actors"] = env.unwrapped.num_envs
     # create runner from rl-games
     runner = Runner(IsaacAlgoObserver())
+    print(f"agent_cfg: ")
+    for key in agent_cfg:
+        print(f"{key}: {agent_cfg[key]}") 
     runner.load(agent_cfg)
 
     # set seed of the env
